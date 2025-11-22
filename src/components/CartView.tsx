@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { PromotionType } from '../types';
 import Modal from './Modal';
@@ -14,16 +15,18 @@ const CartView: React.FC = () => {
   const [openPayment, setOpenPayment] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [qrisAmount, setQrisAmount] = useState<number>(0);
+  // Nominal QRIS dihapus: otomatis menggunakan total net.
   const [qrisProof, setQrisProof] = useState<string | undefined>(undefined);
   const [qrisNote, setQrisNote] = useState<string>('');
+
+  const navigate = useNavigate();
 
   function executeCheckout() {
     setConfirming(true);
     const { sale, change } = checkout(
       paymentMethod,
       paymentMethod === 'CASH' ? cashGiven : undefined,
-      paymentMethod === 'QRIS' ? qrisAmount : undefined,
+      undefined, // qrisAmount diabaikan; gunakan net total internal
       paymentMethod === 'QRIS' ? qrisProof : undefined,
       paymentMethod === 'QRIS' ? qrisNote : undefined,
     );
@@ -40,7 +43,9 @@ const CartView: React.FC = () => {
     setOpenConfirm(false);
     setOpenPayment(false);
     // reset qris fields
-    setQrisAmount(0); setQrisProof(undefined); setQrisNote('');
+    setQrisProof(undefined); setQrisNote('');
+    // Redirect ke halaman kasir (utama) setelah sukses agar tidak blank.
+    setTimeout(() => navigate('/'), 150);
   }
 
   function handlePaymentConfirmClick() {
@@ -154,10 +159,8 @@ const CartView: React.FC = () => {
           )}
           {paymentMethod === 'QRIS' && (
             <div className="qris-form">
-              <div className="qris-info">Scan QRIS pelanggan lalu unggah bukti & isi nominal.</div>
-              <label className="form-label">Nominal Dibayar</label>
-              <input type="number" className="qris-input" value={qrisAmount} onChange={e => setQrisAmount(parseInt(e.target.value) || 0)} placeholder={`Default: ${totals.subtotal}`} />
-              <label className="form-label">Bukti Pembayaran (kamera)</label>
+              <div className="qris-info">Scan QRIS pelanggan lalu unggah bukti pembayaran. Nominal otomatis sesuai total.</div>
+              <label className="form-label">Bukti Pembayaran (Foto)</label>
               <CameraCapture onCapture={data => setQrisProof(data)} />
               <label className="form-label">Catatan</label>
               <textarea className="qris-textarea" rows={3} value={qrisNote} onChange={e => setQrisNote(e.target.value)} placeholder="Opsional: keterangan tambahan"></textarea>
@@ -182,7 +185,7 @@ const CartView: React.FC = () => {
           </ul>
           <div className="confirm-total">Total: Rp {totals.subtotal.toLocaleString('id-ID')}</div>
           {paymentMethod === 'QRIS' && (
-            <div className="confirm-qris">QRIS Nominal: Rp {(qrisAmount || totals.subtotal).toLocaleString('id-ID')}</div>
+            <div className="confirm-qris">QRIS Nominal: Rp {totals.subtotal.toLocaleString('id-ID')}</div>
           )}
           {paymentMethod === 'CASH' && (
             <div className="confirm-cash">Cash: Rp {cashGiven.toLocaleString('id-ID')} {cashGiven >= totals.subtotal && <>| Kembalian: Rp {(cashGiven-totals.subtotal).toLocaleString('id-ID')}</>}</div>
