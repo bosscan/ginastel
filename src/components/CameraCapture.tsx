@@ -19,6 +19,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let retryTimer: number | undefined;
     async function init() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError('Browser tidak mendukung kamera.');
@@ -26,28 +27,45 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
       }
       setInitialTried(true);
       try {
-        const constraints: MediaStreamConstraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+        const constraints: MediaStreamConstraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
         stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () => {
-          // fallback tanpa facingMode
           return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = async () => {
+        const video = videoRef.current;
+        if (video) {
+          video.setAttribute('playsInline','true');
+          video.muted = true; // membantu autoplay di mobile safari
+          video.srcObject = stream;
+
+          const markReady = () => {
+            if (!streamReady) setStreamReady(true);
+          };
+
+            // event listeners untuk berbagai kondisi readiness
+          video.addEventListener('loadeddata', markReady, { once: true });
+          video.addEventListener('canplay', markReady, { once: true });
+          video.addEventListener('playing', markReady, { once: true });
+
+          const attemptPlay = async () => {
             try {
-              await videoRef.current?.play();
-              setStreamReady(true);
+              await video.play();
+              markReady();
             } catch (playErr: any) {
               const msg = playErr?.message || '';
               if (msg.includes('NotAllowedError') || msg.includes('gesture')) {
-                setNeedInteract(true); // user harus klik
+                setNeedInteract(true);
               } else if (!benignMessages.some(m => msg.includes(m))) {
-                setError('Gagal memulai kamera. Izinkan akses kamera di browser.');
-              } else {
-                setTimeout(() => { videoRef.current?.play().catch(() => {}); }, 400);
+                // Jika bukan pesan jinak, set error; namun beri kesempatan retry dulu
+                retryTimer = window.setTimeout(() => attemptPlay(), 600);
               }
             }
           };
+          attemptPlay();
+
+          // fallback: jika belum ready dalam 3 detik dan tidak butuh gesture, coba lagi
+          setTimeout(() => {
+            if (!streamReady && !needInteract && !error) attemptPlay();
+          }, 3000);
         }
       } catch (e: any) {
         const msg = e?.message || 'Tidak bisa akses kamera';
@@ -56,9 +74,10 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
     }
     init();
     return () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
       stream?.getTracks().forEach(t => t.stop());
     };
-  }, []);
+  }, [streamReady, needInteract, error]);
 
   useEffect(() => {
     if (streamReady && autoCapture && !photo) {
@@ -105,10 +124,17 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
         {!photo && needInteract && (
           <button type="button" className="capture-btn" onClick={async () => {
             setNeedInteract(false);
-            try { await videoRef.current?.play(); setStreamReady(true); } catch { setError('Klik diizinkan kamera diblokir. Periksa permission.'); }
+            try {
+              await videoRef.current?.play();
+              setStreamReady(true);
+            } catch {
+              setError('Permission kamera belum diberikan. Periksa setting browser.');
+            }
           }}>Aktifkan Kamera</button>
         )}
-        {!photo && !needInteract && <button type="button" className="capture-btn" onClick={handleCapture} disabled={!streamReady}>Ambil Foto</button>}
+        {!photo && !needInteract && (
+          <button type="button" className="capture-btn" onClick={handleCapture} disabled={!streamReady}>Ambil Foto</button>
+        )}
         {photo && <button type="button" className="capture-btn" onClick={retake}>Ulangi Foto</button>}
       </div>
       {!streamReady && !error && initialTried && !needInteract && <div className="camera-hint">Menginisialisasi kamera...</div>}
