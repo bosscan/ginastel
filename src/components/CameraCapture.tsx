@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface CameraCaptureProps {
   onCapture: (dataUrl: string) => void;
-  autoCapture?: boolean; // jika true, otomatis ambil foto sekali setelah ready
+  autoCapture?: boolean; // tidak dipakai untuk QRIS saat ini, bisa diaktifkan lagi jika perlu
 }
 
 const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture }) => {
@@ -10,82 +10,93 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [streamReady, setStreamReady] = useState(false);
   const [error, setError] = useState<string | null>(null); // pesan kesalahan penting
-  const [needInteract, setNeedInteract] = useState(false); // user gesture needed
-  const [initialTried, setInitialTried] = useState(false);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [initialized, setInitialized] = useState(false); // sudah pernah request perangkat
   const benignMessages = [
     'The play() request was interrupted by a new load request.'
   ];
   const [photo, setPhoto] = useState<string | null>(null);
+  const currentStreamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    let retryTimer: number | undefined;
-    async function init() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError('Browser tidak mendukung kamera.');
-        return;
-      }
-      setInitialTried(true);
-      try {
-        const constraints: MediaStreamConstraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
-        stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () => {
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        });
-        const video = videoRef.current;
-        if (video) {
-          video.setAttribute('playsInline','true');
-          video.muted = true; // membantu autoplay di mobile safari
-          video.srcObject = stream;
-
-          const markReady = () => {
-            if (!streamReady) setStreamReady(true);
-          };
-
-            // event listeners untuk berbagai kondisi readiness
-          video.addEventListener('loadeddata', markReady, { once: true });
-          video.addEventListener('canplay', markReady, { once: true });
-          video.addEventListener('playing', markReady, { once: true });
-
-          const attemptPlay = async () => {
-            try {
-              await video.play();
-              markReady();
-            } catch (playErr: any) {
-              const msg = playErr?.message || '';
-              if (msg.includes('NotAllowedError') || msg.includes('gesture')) {
-                setNeedInteract(true);
-              } else if (!benignMessages.some(m => msg.includes(m))) {
-                // Jika bukan pesan jinak, set error; namun beri kesempatan retry dulu
-                retryTimer = window.setTimeout(() => attemptPlay(), 600);
-              }
-            }
-          };
-          attemptPlay();
-
-          // fallback: jika belum ready dalam 3 detik dan tidak butuh gesture, coba lagi
-          setTimeout(() => {
-            if (!streamReady && !needInteract && !error) attemptPlay();
-          }, 3000);
-        }
-      } catch (e: any) {
-        const msg = e?.message || 'Tidak bisa akses kamera';
-        if (msg.toLowerCase().includes('permission')) setNeedInteract(true); else if (!benignMessages.some(m => msg.includes(m))) setError(msg);
-      }
+  // Enumerate devices AFTER first permission grant
+  async function loadDevices() {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const vids = list.filter(d => d.kind === 'videoinput');
+      setDevices(vids);
+      if (!selectedDeviceId && vids.length > 0) setSelectedDeviceId(vids[0].deviceId);
+    } catch (e: any) {
+      // ignore; will still allow default stream
     }
-    init();
-    return () => {
-      if (retryTimer) window.clearTimeout(retryTimer);
-      stream?.getTracks().forEach(t => t.stop());
-    };
-  }, [streamReady, needInteract, error]);
+  }
 
+  async function startStream(deviceId?: string) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError('Browser tidak mendukung kamera.');
+      return;
+    }
+    setStarting(true);
+    setError(null);
+    try {
+      // Stop existing
+      if (currentStreamRef.current) {
+        currentStreamRef.current.getTracks().forEach(t => t.stop());
+        currentStreamRef.current = null;
+      }
+      const constraints: MediaStreamConstraints = {
+        video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } },
+        audio: false
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () => {
+        return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      });
+      currentStreamRef.current = stream;
+      const video = videoRef.current;
+      if (video) {
+        video.setAttribute('playsInline','true');
+        video.muted = true;
+        video.srcObject = stream;
+        const tryPlay = async () => {
+          try {
+            await video.play();
+            setStreamReady(true);
+          } catch (e: any) {
+            const msg = e?.message || '';
+            if (!benignMessages.some(m => msg.includes(m))) {
+              setError('Tidak bisa memulai kamera: ' + msg);
+            }
+          }
+        };
+        video.onloadeddata = tryPlay;
+        video.oncanplay = tryPlay;
+        setTimeout(tryPlay, 400); // extra attempt
+      }
+      await loadDevices();
+      setInitialized(true);
+    } catch (e: any) {
+      setError(e?.message || 'Tidak bisa akses kamera');
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // Auto capture still supported if desired (not primary path now)
   useEffect(() => {
     if (streamReady && autoCapture && !photo) {
-      // auto capture setelah 1.2 detik (biar fokus)
       const t = setTimeout(() => handleCapture(), 1200);
       return () => clearTimeout(t);
     }
   }, [streamReady, autoCapture, photo]);
+
+  useEffect(() => {
+    return () => {
+      if (currentStreamRef.current) {
+        currentStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   function handleCapture() {
     const video = videoRef.current;
@@ -101,8 +112,11 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
     onCapture(dataUrl);
   }
 
-  function retake() {
+  async function retake() {
     setPhoto(null);
+    setStreamReady(false);
+    // restart stream on retake for clarity
+    await startStream(selectedDeviceId || undefined);
   }
 
   return (
@@ -120,27 +134,31 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
           <img src={photo} alt="Bukti QRIS" className="camera-preview" />
         </div>
       )}
-      <div className="camera-actions">
-        {!photo && needInteract && (
-          <button type="button" className="capture-btn" onClick={async () => {
-            setNeedInteract(false);
-            try {
-              await videoRef.current?.play();
-              setStreamReady(true);
-            } catch {
-              setError('Permission kamera belum diberikan. Periksa setting browser.');
-            }
-          }}>Aktifkan Kamera</button>
+      <div className="camera-actions" style={{flexWrap:'wrap'}}>
+        {!initialized && (
+          <button type="button" className="capture-btn" disabled={starting} onClick={() => startStream(selectedDeviceId || undefined)}>
+            {starting ? 'Memulai...' : 'Aktifkan Kamera'}
+          </button>
         )}
-        {!photo && !needInteract && (
-          <button type="button" className="capture-btn" onClick={handleCapture} disabled={!streamReady}>Ambil Foto</button>
+        {initialized && !photo && (
+          <>
+            <button type="button" className="capture-btn" onClick={handleCapture} disabled={!streamReady}>Ambil Foto</button>
+            <button type="button" className="capture-btn" onClick={() => startStream(selectedDeviceId || undefined)} disabled={starting || !streamReady}>Refresh</button>
+            {devices.length > 1 && (
+              <select className="qris-input" value={selectedDeviceId || ''} onChange={e => { setSelectedDeviceId(e.target.value); startStream(e.target.value); }} style={{flex:'1 1 100%', marginTop:8}}>
+                {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Kamera'}</option>)}
+              </select>
+            )}
+          </>
         )}
         {photo && <button type="button" className="capture-btn" onClick={retake}>Ulangi Foto</button>}
       </div>
-      {!streamReady && !error && initialTried && !needInteract && <div className="camera-hint">Menginisialisasi kamera...</div>}
+      {!streamReady && !error && initialized && <div className="camera-hint">Menginisialisasi kamera...</div>}
       {error && (
         <div className="camera-fallback">
-          <p style={{fontSize:'12px'}}>Fallback upload bukti (gambar) jika kamera bermasalah:</p>
+          <p style={{fontSize:'12px', margin:'4px 0'}}>{error}</p>
+          <button type="button" className="capture-btn" onClick={() => startStream(selectedDeviceId || undefined)} disabled={starting}>Coba Lagi</button>
+          <p style={{fontSize:'12px'}}>Fallback upload bukti jika kamera tetap gagal:</p>
           <input type="file" accept="image/*" onChange={e => {
             const file = e.target.files?.[0];
             if (!file) return;
