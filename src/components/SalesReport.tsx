@@ -127,21 +127,28 @@ const SalesReport: React.FC = () => {
       <div className="report-header">
         <h2>Report Penjualan</h2>
         <div className="report-filters">
-          <input 
-            type="date" 
-            className="filter-date" 
-            value={dateFilter} 
-            onChange={e => setDateFilter(e.target.value)} 
-            placeholder="Filter tanggal"
-          />
+          <div className="filter-block">
+            <label className="filter-label" htmlFor="filterDate">Tanggal</label>
+            <input 
+              id="filterDate"
+              type="date" 
+              className="filter-date" 
+              value={dateFilter} 
+              onChange={e => setDateFilter(e.target.value)} 
+            />
+          </div>
           <PaymentMethodSelect value={paymentFilter} onChange={setPaymentFilter} />
-          <input 
-            type="text" 
-            className="filter-search" 
-            value={searchTerm} 
-            onChange={e => setSearchTerm(e.target.value)} 
-            placeholder="Cari item..."
-          />
+          <div className="filter-block">
+            <label className="filter-label" htmlFor="filterSearch">Cari Item</label>
+            <input 
+              id="filterSearch"
+              type="text" 
+              className="filter-search" 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+              placeholder="Ketik nama produk"
+            />
+          </div>
           {(dateFilter || paymentFilter !== 'ALL' || searchTerm) && (
             <button 
               className="filter-reset" 
