@@ -14,6 +14,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [initialized, setInitialized] = useState(false); // sudah pernah request perangkat
+  const [statusMsg, setStatusMsg] = useState<string>('Belum mulai');
   const benignMessages = [
     'The play() request was interrupted by a new load request.'
   ];
@@ -39,6 +40,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
     }
     setStarting(true);
     setError(null);
+    setStatusMsg('Meminta izin kamera...');
     try {
       // Stop existing
       if (currentStreamRef.current) {
@@ -58,25 +60,40 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
         video.setAttribute('playsInline','true');
         video.muted = true;
         video.srcObject = stream;
-        const tryPlay = async () => {
-          try {
-            await video.play();
-            setStreamReady(true);
-          } catch (e: any) {
-            const msg = e?.message || '';
-            if (!benignMessages.some(m => msg.includes(m))) {
-              setError('Tidak bisa memulai kamera: ' + msg);
-            }
+        // Coba play langsung lalu polling videoWidth
+        try {
+          await video.play();
+        } catch (e: any) {
+          if (!benignMessages.some(m => (e?.message||'').includes(m))) {
+            setError('Gagal play(): ' + (e?.message || 'Unknown'));
           }
-        };
-        video.onloadeddata = tryPlay;
-        video.oncanplay = tryPlay;
-        setTimeout(tryPlay, 400); // extra attempt
+        }
+        setStatusMsg('Menyiapkan stream...');
+        for (let i=0;i<20;i++) { // ~3s total
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            setStreamReady(true);
+            setStatusMsg('Kamera siap');
+            break;
+          }
+          await new Promise(r => setTimeout(r,150));
+        }
+        if (!streamReady) {
+          setStatusMsg('Menunggu frame pertama...');
+          setTimeout(() => {
+            if (video.videoWidth > 0 && !streamReady) {
+              setStreamReady(true);
+              setStatusMsg('Kamera siap');
+            } else if (!streamReady) {
+              setStatusMsg('Frame belum muncul, coba Refresh');
+            }
+          }, 1000);
+        }
       }
       await loadDevices();
       setInitialized(true);
     } catch (e: any) {
       setError(e?.message || 'Tidak bisa akses kamera');
+      setStatusMsg('Gagal akses kamera');
     } finally {
       setStarting(false);
     }
@@ -153,7 +170,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
         )}
         {photo && <button type="button" className="capture-btn" onClick={retake}>Ulangi Foto</button>}
       </div>
-      {!streamReady && !error && initialized && <div className="camera-hint">Menginisialisasi kamera...</div>}
+  {!photo && initialized && <div className="camera-hint" style={{fontSize:'11px'}}>{statusMsg}</div>}
       {error && (
         <div className="camera-fallback">
           <p style={{fontSize:'12px', margin:'4px 0'}}>{error}</p>
@@ -166,6 +183,19 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, autoCapture })
             reader.onload = () => { const dataUrl = reader.result as string; setPhoto(dataUrl); onCapture(dataUrl); };
             reader.readAsDataURL(file);
           }} />
+        </div>
+      )}
+      {/* Selalu sediakan opsi capture langsung device (mobile membuka kamera) */}
+      {!photo && (
+        <div style={{marginTop:8}}>
+          <input type="file" accept="image/*" capture="environment" onChange={e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => { const dataUrl = reader.result as string; setPhoto(dataUrl); onCapture(dataUrl); }; 
+            reader.readAsDataURL(file);
+          }} style={{display:'block', width:'100%'}} />
+          <div className="camera-hint" style={{marginTop:4}}>Alternatif: unggah / ambil foto langsung dari perangkat.</div>
         </div>
       )}
       <div className="camera-hint">Pastikan foto menampilkan bukti pembayaran jelas.</div>
