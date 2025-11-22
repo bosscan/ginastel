@@ -24,15 +24,20 @@ const dummyUsers: Record<string, { password: string; role: 'staff' | 'owner' }> 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
+  // loading = true saat proses hydrate localStorage atau auth supabase
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('authUser');
-    if (stored) setUser(JSON.parse(stored));
+    try {
+      const stored = localStorage.getItem('authUser');
+      if (stored) setUser(JSON.parse(stored));
+    } finally {
+      setLoading(false); // selesai hydrate
+    }
   }, []);
 
   async function login(username: string, password: string): Promise<boolean> {
-    setLoading(true);
+  setLoading(true);
     try {
       if (supabase) {
         // Jika menggunakan Supabase, field username diasumsikan email
@@ -62,8 +67,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   async function logout() {
     if (supabase) await supabase.auth.signOut();
-    setUser(null);
-    localStorage.removeItem('authUser');
+  setUser(null);
+  localStorage.removeItem('authUser');
   }
 
   return (

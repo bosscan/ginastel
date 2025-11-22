@@ -11,9 +11,11 @@ import { CartProvider } from './context/CartContext';
 import { StockProvider } from './context/StockContext';
 
 const Protected: React.FC<{ children: React.ReactNode; roles?: ('staff' | 'owner')[] }> = ({ children, roles }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  // Tunggu hingga proses hydrate selesai agar tidak redirect sebelum user di-load
+  if (loading) return <div style={{padding:40, textAlign:'center'}}>Memuat...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) return <div>Akses ditolak</div>;
+  if (roles && !roles.includes(user.role)) return <div style={{padding:40}}>Akses ditolak</div>;
   return <>{children}</>;
 };
 
