@@ -1,0 +1,49 @@
+# Node / Vite / TypeScript build artifacts
+node_modules/
+.dist/
+dist/
+.svelte-kit/
+.next/
+.out/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment variables
+.env
+.env.*
+!.env.example
+
+# Editor directories and files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Mac system files
+Icon?
+
+# Optional caches
+.eslintcache
+.stylelintcache
+.cache/
+
+# Production build outputs
+build/
+
+# Images generated at runtime
+public/uploads/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Local test snapshots
+__snapshots__/
+
+# Coverage reports
+lcov.info
+
+# Misc
+*.tgz
