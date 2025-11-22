@@ -113,7 +113,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setSales(prev => {
       const next = [sale, ...prev];
-      saveSales(next);
+      try {
+        saveSales(next);
+      } catch (err) {
+        console.error('Gagal menyimpan penjualan ke localStorage (mungkin ukuran bukti terlalu besar).', err);
+      }
       return next;
     });
     clearCart();

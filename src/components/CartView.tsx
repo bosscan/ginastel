@@ -31,20 +31,20 @@ const CartView: React.FC = () => {
       paymentMethod === 'QRIS' ? qrisNote : undefined,
     );
     if (!sale) {
-      setMessage('Uang kurang');
+      setMessage(paymentMethod === 'CASH' ? 'Uang kurang' : 'QRIS gagal. Periksa bukti.');
+      setConfirming(false);
+      return; // jangan tutup modal jika gagal
+    }
+    if (paymentMethod === 'CASH') {
+      setMessage(`Transaksi sukses. Kembalian: Rp ${change.toLocaleString('id-ID')}`);
     } else {
-      if (paymentMethod === 'CASH') {
-        setMessage(`Transaksi sukses. Kembalian: Rp ${change.toLocaleString('id-ID')}`);
-      } else {
-        setMessage('Transaksi QRIS sukses.');
-      }
+      setMessage('Transaksi QRIS sukses.');
     }
     setConfirming(false);
     setOpenConfirm(false);
     setOpenPayment(false);
-    // reset qris fields
     setQrisProof(undefined); setQrisNote('');
-    // Redirect ke halaman kasir (utama) setelah sukses agar tidak blank.
+    // Redirect hanya jika sale sukses
     setTimeout(() => navigate('/'), 150);
   }
 
