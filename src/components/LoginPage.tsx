@@ -29,7 +29,7 @@ const LoginPage: React.FC = () => {
         <input type="password" value={password} onChange={e => setPassword(e.target.value)} />
         <button type="submit" disabled={loading}>{loading ? 'Loading...' : 'Masuk'}</button>
         {error && <div className="error">{error}</div>}
-        <p>Dummy akun: penjaga_outlet/ginastel123 atau owner_outlet/ginastelf2</p>
+        <p>Bismillahirrahmanirrahim</p>
       </form>
     </div>
   );
